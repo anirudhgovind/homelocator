@@ -1,6 +1,6 @@
 check_column_exists <- function(data, colname, type) {
   if (inherits(data, "Dataset") || inherits(data, "tbl_lazy")) {
-    if (!(colname %in% names(data))) {
+    if (!(colname %in% colnames(data))) {
       stop(paste0(type, " column does not exist in dataset!"))
     }
   } else if (is.data.frame(data)) {
