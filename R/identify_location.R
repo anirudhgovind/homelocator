@@ -27,6 +27,43 @@ identify_location <- function(df, user = "u_id", timestamp = "created_at", locat
   location_expr <- rlang::sym(location)
   
   tictoc::tic("Location Identification")
+
+  # ---- Lazy path: Arrow Dataset / DuckDB tbl_lazy --------------------------
+  # For FREQ, HMLC, and OSNA the full pipeline can be expressed as grouped
+  # dplyr operations that run inside the engine.  Data is only collected after
+  # the (user × location) aggregation, which is always a small table.
+  if (is_lazy_frame(df) && recipe %in% c("FREQ", "HMLC", "OSNA")) {
+    message(paste(emo::ji("zap"),
+                  "Lazy frame detected — using flat execution path for", recipe))
+    df_validated <- validate_dataset(df, user = user, timestamp = timestamp,
+                                     location = location)
+    if (recipe == "FREQ") {
+      output <- recipe_FREQ_lazy(df_validated, user = user,
+                                 timestamp = timestamp, location = location,
+                                 show_n_loc = show_n_loc,
+                                 keep_score = keep_score,
+                                 use_default_threshold = use_default_threshold,
+                                 rm_topNpct_user = rm_topNpct_user)
+    } else if (recipe == "HMLC") {
+      output <- recipe_HMLC_lazy(df_validated, user = user,
+                                 timestamp = timestamp, location = location,
+                                 show_n_loc = show_n_loc,
+                                 keep_score = keep_score,
+                                 use_default_threshold = use_default_threshold,
+                                 rm_topNpct_user = rm_topNpct_user)
+    } else if (recipe == "OSNA") {
+      output <- recipe_OSNA_lazy(df_validated, user = user,
+                                 timestamp = timestamp, location = location,
+                                 show_n_loc = show_n_loc,
+                                 keep_score = keep_score,
+                                 use_default_threshold = use_default_threshold,
+                                 rm_topNpct_user = rm_topNpct_user)
+    }
+    tictoc::toc()
+    return(output)
+  }
+
+  # ---- In-memory (nested) path: original behaviour -------------------------
   ## Validate the input dataset 
   df_valided <- validate_dataset(df, user = user, timestamp = timestamp, location = location)
   

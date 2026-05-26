@@ -28,7 +28,10 @@ Imports:
     usethis (>= 1.6.0),
     emo
 Suggests:
+    arrow,
+    dbplyr,
     devtools,
+    duckdb,
     furrr,
     knitr,
     roxygen2,

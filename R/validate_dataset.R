@@ -18,29 +18,46 @@
 #' 
 #' @export
 validate_dataset <- function(df, user = "u_id", timestamp = "created_at", location = "loc_id", keep_other_vars = F){
-  if (!rlang::has_name(df, user)) {
-    stop(paste(emo::ji("bomb"), "User column does not exist!"))
-  }
-  if (!rlang::has_name(df, timestamp)) {
-    stop(paste(emo::ji("bomb"), "Timestamp column does not exist!"))
-  }
-  if (!rlang::has_name(df, location)) {
-    stop(paste(emo::ji("bomb"), "Location column does not exist!"))
-  }
+
+  # Add support for arrow datatypes
+  
+  check_column_exists(df, user, "User")
+  
+  check_column_exists(df, timestamp, "Timestamp")
+  
+  check_column_exists(df, location, "Location")
+  
+  # if (!rlang::has_name(df, user)) {
+  #   stop(paste(emo::ji("bomb"), "User column does not exist!"))
+  # }
+  # if (!rlang::has_name(df, timestamp)) {
+  #   stop(paste(emo::ji("bomb"), "Timestamp column does not exist!"))
+  # }
+  # if (!rlang::has_name(df, location)) {
+  #   stop(paste(emo::ji("bomb"), "Location column does not exist!"))
+  # }
 
   user <- rlang::sym(user)
   timestamp <- rlang::sym(timestamp)
   location <- rlang::sym(location)
 
-  if (!is.data.frame(df)) {
-    stop(paste(emo::ji("bomb"), "Dataset is not a dataframe!"))
+  if (!is.data.frame(df) && !inherits(df, "Dataset") && !inherits(df, "tbl_lazy")) {
+    stop(paste(emo::ji("bomb"), "Input must be a dataframe, Arrow Dataset, or lazy database table!"))
   }
 
-  if (!is(df %>% pull({{timestamp}}), "POSIXct")) {
+  ts_sample <- df %>%
+    dplyr::select(!!timestamp) %>%
+    utils::head(1) %>%
+    dplyr::collect() %>%
+    dplyr::pull(1)
+  if (!inherits(ts_sample, "POSIXct")) {
     stop("Timestamp is not of class POSIXct")
   }
 
-  unique_users <- df %>% pull({{user}}) %>% n_distinct()
+  unique_users <- df %>%
+    dplyr::summarise(n = dplyr::n_distinct(!!user)) %>%
+    dplyr::collect() %>%
+    dplyr::pull(n)
   message(paste(emo::ji("tada"), "Congratulations!! Your dataset has passed validation."))
   message(paste(emo::ji("bust_in_silhouette"), "There are", unique_users, "unique users in your dataset."))
   message(paste(emo::ji("earth_asia"), "Now start your journey identifying their meaningful location(s)!"))

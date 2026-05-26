@@ -12,15 +12,15 @@
 #' @export
 nest_verbose <- function(df, ...){
   
-  if (!is.data.frame(df)) {
+  if (!is.data.frame(df) && !inherits(df, "Dataset")) {
     stop(paste(emo::ji("bomb"), "Dataset is not a dataframe!"))
   }
   
-  var_expr <- enquos(..., .named = TRUE)
+  var_expr <- rlang::enquos(..., .named = TRUE)
   
   message(paste(emo::ji("hammer_and_wrench"), "Start nesting..."))
   start.time <- Sys.time()
-  output <- df %>% nest_legacy(!!!var_expr)
+  output <- df %>% tidyr::nest_legacy(!!!var_expr)
   end.time <- Sys.time()
   time.taken <-  difftime(end.time, start.time, units = "secs") %>% round(., 3)
   
