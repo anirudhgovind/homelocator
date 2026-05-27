@@ -419,6 +419,17 @@ recipe_HMLC_lazy <- function(df, user = "u_id", timestamp = "created_at",
     )
 
   if (nrow(df_loc_filtered) == 0) {
+    # Diagnostic: show how many locations survive each individual threshold
+    n_pts   <- sum(df_loc_stats$n_points_loc > threshold_n_points_loc,  na.rm = TRUE)
+    n_hrs   <- sum(df_loc_stats$n_hours_loc  > threshold_n_hours_loc,   na.rm = TRUE)
+    n_days  <- sum(df_loc_stats$n_days_loc   > threshold_n_days_loc,    na.rm = TRUE)
+    n_per   <- sum(df_loc_stats$period_loc   > threshold_period_loc,    na.rm = TRUE)
+    n_total <- nrow(df_loc_stats)
+    message(paste0(emo::ji("bar_chart"), " Location-filter diagnostics (total user-location pairs: ", n_total, "):"))
+    message(paste0("   n_points_loc > ", threshold_n_points_loc, ": ", n_pts,  " pass"))
+    message(paste0("   n_hours_loc  > ", threshold_n_hours_loc,  ": ", n_hrs,  " pass"))
+    message(paste0("   n_days_loc   > ", threshold_n_days_loc,   ": ", n_days, " pass"))
+    message(paste0("   period_loc   > ", threshold_period_loc,   ": ", n_per,  " pass"))
     stop(paste(emo::ji("bomb"),
                "No locations survived the location-level filters.",
                "Try lowering your thresholds with use_default_threshold = FALSE."))
@@ -558,14 +569,16 @@ recipe_OSNA_lazy <- function(df, user = "u_id", timestamp = "created_at",
   # Step 4 — OSNA scoring aggregation, entirely lazy -------------------------
   # When count is provided each row represents count raw records, so the score
   # contribution per row is weight * count rather than weight * 1.
+  # The is.null() branch is resolved in R before building the query so dbplyr
+  # never tries to translate it into SQL.
   valid_user_ids <- dplyr::pull(df_users_valid, !!user_expr)
   message(paste(emo::ji("hammer_and_wrench"),
                 "Computing OSNA location scores (lazy)..."))
-  df_loc_scored <- df_enriched %>%
+
+  # Build the pre-filtered, pre-classified lazy frame shared by both branches
+  df_osna_base <- df_enriched %>%
     dplyr::filter(!!user_expr %in% valid_user_ids) %>%
-    # Remove weekends (wday 1 = Sunday, 7 = Saturday)
     dplyr::filter(!wday %in% c(1L, 7L)) %>%
-    # Classify each row's time into Rest / Active / Leisure
     dplyr::mutate(
       timeframe = dplyr::case_when(
         hour >= 2L & hour <  8L  ~ "Rest",
@@ -573,26 +586,32 @@ recipe_OSNA_lazy <- function(df, user = "u_id", timestamp = "created_at",
         TRUE                      ~ "Leisure"
       )
     ) %>%
-    # Retain only Rest and Leisure rows
     dplyr::filter(timeframe != "Active") %>%
-    dplyr::group_by(!!user_expr, !!location_expr) %>%
-    { if (is.null(count_expr))
-        dplyr::summarise(.,
-          score = sum(
-            dplyr::if_else(timeframe == "Rest",    weight_rest,    0.0) +
-            dplyr::if_else(timeframe == "Leisure", weight_leisure, 0.0)
-          ),
-          .groups = "drop")
-      else
-        dplyr::summarise(.,
-          score = sum(
-            (dplyr::if_else(timeframe == "Rest",    weight_rest,    0.0) +
-             dplyr::if_else(timeframe == "Leisure", weight_leisure, 0.0)) *
-            !!count_expr,
-            na.rm = TRUE),
-          .groups = "drop")
-    } %>%
-    dplyr::collect()
+    dplyr::group_by(!!user_expr, !!location_expr)
+
+  df_loc_scored <- if (is.null(count_expr)) {
+    df_osna_base %>%
+      dplyr::summarise(
+        score = sum(
+          dplyr::if_else(timeframe == "Rest",    weight_rest,    0.0) +
+          dplyr::if_else(timeframe == "Leisure", weight_leisure, 0.0)
+        ),
+        .groups = "drop"
+      ) %>%
+      dplyr::collect()
+  } else {
+    df_osna_base %>%
+      dplyr::summarise(
+        score = sum(
+          (dplyr::if_else(timeframe == "Rest",    weight_rest,    0.0) +
+           dplyr::if_else(timeframe == "Leisure", weight_leisure, 0.0)) *
+          !!count_expr,
+          na.rm = TRUE
+        ),
+        .groups = "drop"
+      ) %>%
+      dplyr::collect()
+  }
 
   time_taken <- round(difftime(Sys.time(), start_time, units = "secs"), 3)
   message(paste(emo::ji("white_check_mark"),
