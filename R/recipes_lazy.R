@@ -201,12 +201,15 @@ recipe_FREQ_lazy <- function(df, user = "u_id", timestamp = "created_at",
                 n_users_valid, "users passed user-level filters."))
 
   # Step 4 — semi_join → aggregate to (user, loc) → collect ------------------
+  # copy = TRUE allows joining the lazy remote frame with the in-memory
+  # df_users_valid tibble by temporarily copying it into the same source.
   message(paste(emo::ji("hammer_and_wrench"),
                 "Aggregating location-level statistics..."))
   df_loc_stats <- dplyr::semi_join(
     df_enriched,
     dplyr::select(df_users_valid, !!user_expr),
-    by = user
+    by = user,
+    copy = TRUE
   ) %>%
     dplyr::group_by(!!user_expr, !!location_expr) %>%
     dplyr::summarise(n_points_loc = dplyr::n(), .groups = "drop") %>%
@@ -342,7 +345,8 @@ recipe_HMLC_lazy <- function(df, user = "u_id", timestamp = "created_at",
   df_loc_stats <- dplyr::semi_join(
     df_enriched,
     dplyr::select(df_users_valid, !!user_expr),
-    by = user
+    by = user,
+    copy = TRUE
   ) %>%
     dplyr::group_by(!!user_expr, !!location_expr) %>%
     dplyr::summarise(
@@ -513,7 +517,8 @@ recipe_OSNA_lazy <- function(df, user = "u_id", timestamp = "created_at",
   df_loc_scored <- dplyr::semi_join(
     df_enriched,
     dplyr::select(df_users_valid, !!user_expr),
-    by = user
+    by = user,
+    copy = TRUE
   ) %>%
     # Remove weekends (wday 1 = Sunday, 7 = Saturday)
     dplyr::filter(!wday %in% c(1L, 7L)) %>%
