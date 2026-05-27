@@ -17,7 +17,9 @@ check_column_exists <- function(data, colname, type) {
 is_lazy_frame <- function(df) {
   inherits(df, "Dataset") ||
     inherits(df, "arrow_dplyr_query") ||
-    inherits(df, "tbl_lazy")
+    inherits(df, "tbl_lazy") ||
+    inherits(df, "tbl_sql") ||
+    inherits(df, "tbl_dbi")
 }
 
 #' Collect a lazy frame into memory; return regular data frames unchanged

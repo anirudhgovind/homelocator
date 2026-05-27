@@ -34,9 +34,14 @@ identify_location <- function(df, user = "u_id", timestamp = "created_at", locat
   # For FREQ, HMLC, and OSNA the full pipeline can be expressed as grouped
   # dplyr operations that run inside the engine.  Data is only collected after
   # the (user × location) aggregation, which is always a small table.
-  if (is_lazy_frame(df) && recipe %in% c("FREQ", "HMLC", "OSNA")) {
-    message(paste(emo::ji("zap"),
-                  "Lazy frame detected — using flat execution path for", recipe))
+  if ((is_lazy_frame(df) || !is.null(count)) && recipe %in% c("FREQ", "HMLC", "OSNA")) {
+    if (is_lazy_frame(df)) {
+      message(paste(emo::ji("zap"),
+                    "Lazy frame detected — using flat execution path for", recipe))
+    } else {
+      message(paste(emo::ji("zap"),
+                    "Pre-aggregated data (count column provided) — using flat execution path for", recipe))
+    }
     df_validated <- validate_dataset(df, user = user, timestamp = timestamp,
                                      location = location, count = count)
     if (recipe == "FREQ") {
