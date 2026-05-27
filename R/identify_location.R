@@ -12,6 +12,7 @@
 #' @param keep_score Option to keep or remove calculated result/score per user per location
 #' @param use_default_threshold Option to use default threshold or customized threshold
 #' @param rm_topNpct_user Option to remove or keep the top N percent active users
+#' @param count Name of an optional column holding the number of raw records each row represents (pre-aggregated data). NULL if every row is one record.
 #' 
 #' @importFrom rlang sym
 #' @importFrom rlang has_name
@@ -21,7 +22,8 @@
 #' 
 #' @export
 identify_location <- function(df, user = "u_id", timestamp = "created_at", location = "loc_id", recipe, 
-                              show_n_loc = 1, keep_score = F, use_default_threshold = T, rm_topNpct_user = F){
+                              show_n_loc = 1, keep_score = F, use_default_threshold = T, rm_topNpct_user = F,
+                              count = NULL){
   user_expr <- rlang::sym(user)
   timestamp_expr <- rlang::sym(timestamp)
   location_expr <- rlang::sym(location)
@@ -36,28 +38,31 @@ identify_location <- function(df, user = "u_id", timestamp = "created_at", locat
     message(paste(emo::ji("zap"),
                   "Lazy frame detected — using flat execution path for", recipe))
     df_validated <- validate_dataset(df, user = user, timestamp = timestamp,
-                                     location = location)
+                                     location = location, count = count)
     if (recipe == "FREQ") {
       output <- recipe_FREQ_lazy(df_validated, user = user,
                                  timestamp = timestamp, location = location,
                                  show_n_loc = show_n_loc,
                                  keep_score = keep_score,
                                  use_default_threshold = use_default_threshold,
-                                 rm_topNpct_user = rm_topNpct_user)
+                                 rm_topNpct_user = rm_topNpct_user,
+                                 count = count)
     } else if (recipe == "HMLC") {
       output <- recipe_HMLC_lazy(df_validated, user = user,
                                  timestamp = timestamp, location = location,
                                  show_n_loc = show_n_loc,
                                  keep_score = keep_score,
                                  use_default_threshold = use_default_threshold,
-                                 rm_topNpct_user = rm_topNpct_user)
+                                 rm_topNpct_user = rm_topNpct_user,
+                                 count = count)
     } else if (recipe == "OSNA") {
       output <- recipe_OSNA_lazy(df_validated, user = user,
                                  timestamp = timestamp, location = location,
                                  show_n_loc = show_n_loc,
                                  keep_score = keep_score,
                                  use_default_threshold = use_default_threshold,
-                                 rm_topNpct_user = rm_topNpct_user)
+                                 rm_topNpct_user = rm_topNpct_user,
+                                 count = count)
     }
     tictoc::toc()
     return(output)

@@ -9,6 +9,7 @@
 #' @param user Name of column that holds unique identifier for each user
 #' @param timestamp Name of column that holds specific timestamp for each data point and it should be POSIXct
 #' @param location Name of column that holds unique identifier for each location
+#' @param count Name of an optional column holding the number of raw records each row represents (pre-aggregated data). NULL if every row is a single record.
 #' @param keep_other_vars Option to keep or remove other variables of the input dataset
 #' 
 #' @importFrom emo ji
@@ -17,7 +18,7 @@
 #' @importFrom dplyr select
 #' 
 #' @export
-validate_dataset <- function(df, user = "u_id", timestamp = "created_at", location = "loc_id", keep_other_vars = F){
+validate_dataset <- function(df, user = "u_id", timestamp = "created_at", location = "loc_id", count = NULL, keep_other_vars = F){
 
   # Add support for arrow datatypes
   
@@ -26,6 +27,10 @@ validate_dataset <- function(df, user = "u_id", timestamp = "created_at", locati
   check_column_exists(df, timestamp, "Timestamp")
   
   check_column_exists(df, location, "Location")
+
+  if (!is.null(count)) {
+    check_column_exists(df, count, "Count")
+  }
   
   # if (!rlang::has_name(df, user)) {
   #   stop(paste(emo::ji("bomb"), "User column does not exist!"))
@@ -67,7 +72,9 @@ validate_dataset <- function(df, user = "u_id", timestamp = "created_at", locati
   if(keep_other_vars) {
     df
   } else {
-    df %>% dplyr::select(c({{user}}, {{location}}, {{timestamp}}))
+    core_cols <- c(rlang::as_string(user), rlang::as_string(location), rlang::as_string(timestamp))
+    if (!is.null(count)) core_cols <- c(core_cols, count)
+    df %>% dplyr::select(dplyr::all_of(core_cols))
   }
 }
 
