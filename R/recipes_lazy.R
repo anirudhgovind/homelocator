@@ -53,14 +53,27 @@
 #'
 #' @keywords internal
 .user_stats_lazy <- function(df, user_expr, location_expr, count_expr = NULL) {
-  df %>%
-    dplyr::group_by(!!user_expr) %>%
-    dplyr::summarise(
-      n_points = if (is.null(count_expr)) dplyr::n() else sum(!!count_expr, na.rm = TRUE),
-      n_locs   = dplyr::n_distinct(!!location_expr),
-      .groups  = "drop"
-    ) %>%
-    dplyr::collect()
+  # Branch in R before the query is built — avoids dbplyr trying to translate
+  # the R-level is.null() check into SQL.
+  if (is.null(count_expr)) {
+    df %>%
+      dplyr::group_by(!!user_expr) %>%
+      dplyr::summarise(
+        n_points = dplyr::n(),
+        n_locs   = dplyr::n_distinct(!!location_expr),
+        .groups  = "drop"
+      ) %>%
+      dplyr::collect()
+  } else {
+    df %>%
+      dplyr::group_by(!!user_expr) %>%
+      dplyr::summarise(
+        n_points = sum(!!count_expr, na.rm = TRUE),
+        n_locs   = dplyr::n_distinct(!!location_expr),
+        .groups  = "drop"
+      ) %>%
+      dplyr::collect()
+  }
 }
 
 
@@ -205,18 +218,24 @@ recipe_FREQ_lazy <- function(df, user = "u_id", timestamp = "created_at",
                 n_users_valid, "users passed user-level filters."))
 
   # Step 4 — filter to valid users, aggregate to (user, loc) → collect -------
+  # The is.null() branch is resolved in R before the query is built to avoid
+  # dbplyr serialising it as a SQL CASE WHEN expression.
   valid_user_ids <- dplyr::pull(df_users_valid, !!user_expr)
   message(paste(emo::ji("hammer_and_wrench"),
                 "Aggregating location-level statistics..."))
-  df_loc_stats <- df_enriched %>%
-    dplyr::filter(!!user_expr %in% valid_user_ids) %>%
-    dplyr::group_by(!!user_expr, !!location_expr) %>%
-    dplyr::summarise(
-      n_points_loc = if (is.null(count_expr)) dplyr::n()
-                     else sum(!!count_expr, na.rm = TRUE),
-      .groups = "drop"
-    ) %>%
-    dplyr::collect()
+  df_loc_stats <- if (is.null(count_expr)) {
+    df_enriched %>%
+      dplyr::filter(!!user_expr %in% valid_user_ids) %>%
+      dplyr::group_by(!!user_expr, !!location_expr) %>%
+      dplyr::summarise(n_points_loc = dplyr::n(), .groups = "drop") %>%
+      dplyr::collect()
+  } else {
+    df_enriched %>%
+      dplyr::filter(!!user_expr %in% valid_user_ids) %>%
+      dplyr::group_by(!!user_expr, !!location_expr) %>%
+      dplyr::summarise(n_points_loc = sum(!!count_expr, na.rm = TRUE), .groups = "drop") %>%
+      dplyr::collect()
+  }
 
   # Step 5 — filter locations in memory --------------------------------------
   df_loc_filtered <- df_loc_stats %>%
@@ -343,37 +362,49 @@ recipe_HMLC_lazy <- function(df, user = "u_id", timestamp = "created_at",
   message(paste(emo::ji("hammer_and_wrench"),
                 "Aggregating location-level statistics (lazy)..."))
   valid_user_ids <- dplyr::pull(df_users_valid, !!user_expr)
-  df_loc_stats <- df_enriched %>%
-    dplyr::filter(!!user_expr %in% valid_user_ids) %>%
-    dplyr::group_by(!!user_expr, !!location_expr) %>%
-    dplyr::summarise(
-      n_points_loc = if (is.null(count_expr)) dplyr::n()
-                     else sum(!!count_expr, na.rm = TRUE),
-      n_hours_loc  = dplyr::n_distinct(hour),
-      n_days_loc   = dplyr::n_distinct(day_id),
-      n_wdays_loc  = dplyr::n_distinct(wday),
-      n_months_loc = dplyr::n_distinct(month),
-      min_ts       = min(!!timestamp_expr, na.rm = TRUE),
-      max_ts       = max(!!timestamp_expr, na.rm = TRUE),
-      # Count-weighted proportion on a weekend (wday 1 = Sun, 7 = Sat)
-      prop_weekend = if (is.null(count_expr))
-        mean(dplyr::if_else(wday %in% c(1L, 7L), 1.0, 0.0))
-        else sum(dplyr::if_else(wday %in% c(1L, 7L), !!count_expr, 0.0), na.rm = TRUE) /
-             sum(!!count_expr, na.rm = TRUE),
-      # Count-weighted proportion outside 09:00–18:00 ("rest")
-      prop_rest    = if (is.null(count_expr))
-        mean(dplyr::if_else(hour < 9L | hour > 18L, 1.0, 0.0))
-        else sum(dplyr::if_else(hour < 9L | hour > 18L, !!count_expr, 0.0), na.rm = TRUE) /
-             sum(!!count_expr, na.rm = TRUE),
-      # Count-weighted proportion on weekend mornings (06:00–12:00)
-      prop_wk_am   = if (is.null(count_expr))
-        mean(dplyr::if_else(hour >= 6L & hour <= 12L & wday %in% c(1L, 7L), 1.0, 0.0))
-        else sum(dplyr::if_else(hour >= 6L & hour <= 12L & wday %in% c(1L, 7L),
-                                !!count_expr, 0.0), na.rm = TRUE) /
-             sum(!!count_expr, na.rm = TRUE),
-      .groups = "drop"
-    ) %>%
-    dplyr::collect() %>%
+  df_loc_stats <- if (is.null(count_expr)) {
+    df_enriched %>%
+      dplyr::filter(!!user_expr %in% valid_user_ids) %>%
+      dplyr::group_by(!!user_expr, !!location_expr) %>%
+      dplyr::summarise(
+        n_points_loc = dplyr::n(),
+        n_hours_loc  = dplyr::n_distinct(hour),
+        n_days_loc   = dplyr::n_distinct(day_id),
+        n_wdays_loc  = dplyr::n_distinct(wday),
+        n_months_loc = dplyr::n_distinct(month),
+        min_ts       = min(!!timestamp_expr, na.rm = TRUE),
+        max_ts       = max(!!timestamp_expr, na.rm = TRUE),
+        prop_weekend = mean(dplyr::if_else(wday %in% c(1L, 7L), 1.0, 0.0)),
+        prop_rest    = mean(dplyr::if_else(hour < 9L | hour > 18L, 1.0, 0.0)),
+        prop_wk_am   = mean(dplyr::if_else(
+          hour >= 6L & hour <= 12L & wday %in% c(1L, 7L), 1.0, 0.0)),
+        .groups = "drop"
+      ) %>%
+      dplyr::collect()
+  } else {
+    df_enriched %>%
+      dplyr::filter(!!user_expr %in% valid_user_ids) %>%
+      dplyr::group_by(!!user_expr, !!location_expr) %>%
+      dplyr::summarise(
+        n_points_loc = sum(!!count_expr, na.rm = TRUE),
+        n_hours_loc  = dplyr::n_distinct(hour),
+        n_days_loc   = dplyr::n_distinct(day_id),
+        n_wdays_loc  = dplyr::n_distinct(wday),
+        n_months_loc = dplyr::n_distinct(month),
+        min_ts       = min(!!timestamp_expr, na.rm = TRUE),
+        max_ts       = max(!!timestamp_expr, na.rm = TRUE),
+        prop_weekend = sum(dplyr::if_else(wday %in% c(1L, 7L), !!count_expr, 0.0),
+                          na.rm = TRUE) / sum(!!count_expr, na.rm = TRUE),
+        prop_rest    = sum(dplyr::if_else(hour < 9L | hour > 18L, !!count_expr, 0.0),
+                          na.rm = TRUE) / sum(!!count_expr, na.rm = TRUE),
+        prop_wk_am   = sum(dplyr::if_else(
+                          hour >= 6L & hour <= 12L & wday %in% c(1L, 7L),
+                          !!count_expr, 0.0), na.rm = TRUE) /
+                       sum(!!count_expr, na.rm = TRUE),
+        .groups = "drop"
+      ) %>%
+      dplyr::collect()
+  } %>%
     dplyr::mutate(
       period_loc = as.numeric(difftime(max_ts, min_ts, units = "days"))
     )
@@ -486,13 +517,25 @@ recipe_OSNA_lazy <- function(df, user = "u_id", timestamp = "created_at",
                 "Aggregating user-level statistics..."))
   df_user_stats <- df_enriched %>%
     dplyr::group_by(!!user_expr) %>%
-    dplyr::summarise(
-      n_points = if (is.null(count_expr)) dplyr::n()
-                 else sum(!!count_expr, na.rm = TRUE),
-      n_locs   = dplyr::n_distinct(!!location_expr),
-      .groups  = "drop"
-    ) %>%
-    dplyr::collect()
+  df_user_stats <- if (is.null(count_expr)) {
+    df_enriched %>%
+      dplyr::group_by(!!user_expr) %>%
+      dplyr::summarise(
+        n_points = dplyr::n(),
+        n_locs   = dplyr::n_distinct(!!location_expr),
+        .groups  = "drop"
+      ) %>%
+      dplyr::collect()
+  } else {
+    df_enriched %>%
+      dplyr::group_by(!!user_expr) %>%
+      dplyr::summarise(
+        n_points = sum(!!count_expr, na.rm = TRUE),
+        n_locs   = dplyr::n_distinct(!!location_expr),
+        .groups  = "drop"
+      ) %>%
+      dplyr::collect()
+  }
 
   # Step 3 — remove top-N% most active users, then filter by n_locs ----------
   if (rm_topNpct_user) {
@@ -533,20 +576,22 @@ recipe_OSNA_lazy <- function(df, user = "u_id", timestamp = "created_at",
     # Retain only Rest and Leisure rows
     dplyr::filter(timeframe != "Active") %>%
     dplyr::group_by(!!user_expr, !!location_expr) %>%
-    dplyr::summarise(
-      score = if (is.null(count_expr))
-        sum(
-          dplyr::if_else(timeframe == "Rest",    weight_rest,    0.0) +
-          dplyr::if_else(timeframe == "Leisure", weight_leisure, 0.0)
-        )
-        else sum(
-          (dplyr::if_else(timeframe == "Rest",    weight_rest,    0.0) +
-           dplyr::if_else(timeframe == "Leisure", weight_leisure, 0.0)) *
-          !!count_expr,
-          na.rm = TRUE
-        ),
-      .groups = "drop"
-    ) %>%
+    { if (is.null(count_expr))
+        dplyr::summarise(.,
+          score = sum(
+            dplyr::if_else(timeframe == "Rest",    weight_rest,    0.0) +
+            dplyr::if_else(timeframe == "Leisure", weight_leisure, 0.0)
+          ),
+          .groups = "drop")
+      else
+        dplyr::summarise(.,
+          score = sum(
+            (dplyr::if_else(timeframe == "Rest",    weight_rest,    0.0) +
+             dplyr::if_else(timeframe == "Leisure", weight_leisure, 0.0)) *
+            !!count_expr,
+            na.rm = TRUE),
+          .groups = "drop")
+    } %>%
     dplyr::collect()
 
   time_taken <- round(difftime(Sys.time(), start_time, units = "secs"), 3)
