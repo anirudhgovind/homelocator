@@ -526,8 +526,6 @@ recipe_OSNA_lazy <- function(df, user = "u_id", timestamp = "created_at",
   # Step 2 — user-level stats from ALL data → collect ------------------------
   message(paste(emo::ji("hammer_and_wrench"),
                 "Aggregating user-level statistics..."))
-  df_user_stats <- df_enriched %>%
-    dplyr::group_by(!!user_expr) %>%
   df_user_stats <- if (is.null(count_expr)) {
     df_enriched %>%
       dplyr::group_by(!!user_expr) %>%
